@@ -1,3 +1,6 @@
+# Deploy BUILT editor to GitHub Pages.
+# In repo Settings → Pages → Build and deployment → Source must be "GitHub Actions"
+# (not "Deploy from a branch"), or the site will serve unbuilt source.
 name: Deploy to GitHub Pages
 
 on:
@@ -34,6 +37,13 @@ jobs:
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
         run: npm run build
+
+      - name: Verify built output
+        run: |
+          echo "Built files in dist:"
+          ls -la dist/
+          echo "Script tag in index.html (should be /assets/... not /src/main.ts):"
+          grep -n "script.*src=" dist/index.html || true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
