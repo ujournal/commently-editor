@@ -1,5 +1,21 @@
+import type { ResolvedPos } from "@tiptap/pm/model";
 import { Node } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
+
+const NESTED_BLOCK_NAMES = [
+  "blockquote",
+  "bulletList",
+  "orderedList",
+  "listItem",
+];
+
+/** True when position is inside blockquote, list, or list item (not first-level). */
+function isInsideNestedBlock($pos: ResolvedPos): boolean {
+  for (let d = 1; d <= $pos.depth; d++) {
+    if (NESTED_BLOCK_NAMES.indexOf($pos.node(d).type.name) >= 0) return true;
+  }
+  return false;
+}
 
 export type EmbedProvider = "youtube" | "vimeo" | "twitter" | "generic";
 
@@ -221,6 +237,8 @@ export const Embed = Node.create<EmbedOptions>({
             const parent = $pos.parent;
             const isEmptyLine = parent.content.size === 0;
             if (!isEmptyLine) return false;
+            // Only embed on empty first-level lines; skip when inside blockquote/list
+            if (isInsideNestedBlock($pos)) return false;
             editor
               .chain()
               .focus()
