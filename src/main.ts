@@ -1,4 +1,5 @@
 import "./content.css";
+import exampleMd from "./data/example.md?raw";
 import {
   attachEmbedEditMenu,
   attachImageAltMenu,
@@ -7,7 +8,6 @@ import {
   initEditor,
 } from "./editor";
 import { parseEmbedUrl } from "./embed";
-import exampleMd from "../example.md?raw";
 
 const editorEl = document.querySelector(".element") as HTMLElement;
 const bubbleMenuEl = document.querySelector("#bubble-menu") as HTMLElement;
@@ -38,11 +38,15 @@ if (insertImageBtn) {
 const insertEmbedBtn = document.querySelector("#insert-embed-btn");
 if (insertEmbedBtn) {
   insertEmbedBtn.addEventListener("click", () => {
-    const raw = prompt("Paste a link (YouTube, Vimeo, Twitter/X, or any embed URL):");
+    const raw = prompt(
+      "Paste a link (YouTube, Vimeo, Twitter/X, or any embed URL):",
+    );
     if (raw == null || raw.trim() === "") return;
     const parsed = parseEmbedUrl(raw);
     if (!parsed) {
-      alert("Could not recognize an embed URL. Try a full YouTube, Vimeo, or Twitter link.");
+      alert(
+        "Could not recognize an embed URL. Try a full YouTube, Vimeo, or Twitter link.",
+      );
       return;
     }
     editor

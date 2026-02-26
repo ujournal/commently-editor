@@ -67,6 +67,24 @@ function normalizeHeadingLevelsInContent(
   );
 }
 
+/** Normalize heading levels in the current doc so they match allowed levels (e.g. clamp h1 → h2). */
+function normalizeDocHeadingLevels(editor: Editor, allowedLevels: number[]): void {
+  const minLevel = allowedLevels.length > 0 ? Math.min(...allowedLevels) : 1;
+  const updates: { pos: number; attrs: Record<string, unknown> }[] = [];
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === "heading" && typeof node.attrs.level === "number" && node.attrs.level < minLevel) {
+      updates.push({ pos, attrs: { ...node.attrs, level: minLevel } });
+    }
+  });
+  if (updates.length === 0) return;
+  updates.sort((a, b) => b.pos - a.pos);
+  let tr = editor.state.tr;
+  for (const { pos, attrs } of updates) {
+    tr = tr.setNodeMarkup(pos, undefined, attrs);
+  }
+  editor.view.dispatch(tr);
+}
+
 /** On copy, puts the selected content as markdown in the clipboard (text/plain). */
 const MarkdownCopy = Extension.create({
   name: "markdownCopy",
@@ -198,7 +216,7 @@ export function initEditor({
       : []),
   ];
 
-  return new Editor({
+  const editor = new Editor({
     element,
     extensions,
     content,
@@ -214,6 +232,9 @@ export function initEditor({
       },
     },
   });
+  // Initial markdown is parsed by @tiptap/markdown and can produce h1; schema only allows headingLevels (e.g. 2–6). Normalize so markdown output matches.
+  normalizeDocHeadingLevels(editor, headingLevels);
+  return editor;
 }
 
 function getBubblePanels(menuElement: HTMLElement) {

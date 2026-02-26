@@ -8,7 +8,7 @@ You can use it to create:
 
 - **Bold text** using asterisks (`**bold**`) or underscores (`__bold__`).
 - _Italic text_ using single asterisks (`*italic*`) or underscores (`_italic_`).
-- A combination of **_bold and italic text_**.
+- A combination of **_bold and italic text_** (`**_bold and italic text_**`).
 
 Here is a blockquote, which is useful for calling special attention to a quote:
 
