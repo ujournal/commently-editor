@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Commently Editor</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; }
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+      .section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        border-right: 1px solid #e0e0e0;
+      }
+      .section:last-child { border-right: none; }
+      .section-header {
+        padding: 0.5rem 1rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #666;
+        background: #f5f5f5;
+        border-bottom: 1px solid #e0e0e0;
+      }
+      .section-content {
+        flex: 1;
+        padding: 1rem;
+        overflow: auto;
+      }
+      .editor-wrap {
+        min-height: 200px;
+        outline: none;
+      }
+      .editor-toolbar {
+        display: flex;
+        gap: 0.25rem;
+        padding: 0.25rem 0;
+        border-bottom: 1px solid #e0e0e0;
+      }
+      .editor-toolbar button {
+        padding: 0.35rem 0.6rem;
+        font-size: 0.8125rem;
+        background: #f5f5f5;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .editor-toolbar button:hover {
+        background: #eee;
+      }
+      .editor-wrap .tiptap {
+        min-height: 200px;
+        outline: none;
+      }
+      .editor-wrap .tiptap img {
+        max-width: 100%;
+        height: auto;
+        vertical-align: middle;
+      }
+      .embed-wrapper {
+        position: relative;
+        width: 100%;
+        max-width: 640px;
+        margin: 0.5rem 0;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #000;
+      }
+      .embed-wrapper::before {
+        content: "";
+        display: block;
+        padding-top: 56.25%;
+      }
+      .embed-iframe {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: none;
+        pointer-events: none;
+      }
+      .editor-wrap .tiptap a {
+        pointer-events: none;
+        cursor: text;
+      }
+      .image-alt-bubble {
+        position: absolute;
+        visibility: hidden;
+        opacity: 0;
+        padding: 0.35rem 0.5rem;
+        background: #333;
+        color: #fff;
+        border-radius: 6px;
+        font-size: 0.8125rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      }
+      .image-alt-bubble label {
+        white-space: nowrap;
+      }
+      .image-alt-bubble input {
+        width: 180px;
+        padding: 0.25rem 0.4rem;
+        border: none;
+        border-radius: 4px;
+        font-size: inherit;
+        background: #444;
+        color: #fff;
+      }
+      .image-alt-bubble input::placeholder {
+        color: #999;
+      }
+      .bubble-panel {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .bubble-panel input[data-embed-src] {
+        width: 220px;
+      }
+      .bubble-panel input[data-link-url] {
+        width: 200px;
+      }
+      .bubble-panel input[data-link-label] {
+        width: 140px;
+      }
+      .markdown-output {
+        margin: 0;
+        font-family: ui-monospace, monospace;
+        font-size: 13px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: #333;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <section class="section">
+        <header class="section-header">Editor</header>
+        <div class="section-content">
+          <div class="editor-toolbar">
+            <button type="button" id="insert-image-btn" title="Insert image">Image</button>
+            <button type="button" id="insert-embed-btn" title="Insert video or social embed">Embed</button>
+            <button type="button" id="link-btn" title="Add or edit link">Link</button>
+          </div>
+          <div class="element editor-wrap"></div>
+          <div id="bubble-menu" class="image-alt-bubble">
+            <div data-bubble-panel="image" class="bubble-panel">
+              <label for="image-alt-input">Alt text</label>
+              <input type="text" id="image-alt-input" data-image-alt placeholder="Describe the image" />
+            </div>
+            <div data-bubble-panel="embed" class="bubble-panel" style="display: none;">
+              <label for="embed-src-input">URL</label>
+              <input type="url" id="embed-src-input" data-embed-src placeholder="Embed URL" />
+            </div>
+            <div data-bubble-panel="link" class="bubble-panel" style="display: none;">
+              <label for="link-url-input">URL</label>
+              <input type="url" id="link-url-input" data-link-url placeholder="https://..." />
+              <label for="link-label-input">Label</label>
+              <input type="text" id="link-label-input" data-link-label placeholder="Link text" />
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="section">
+        <header class="section-header">Markdown</header>
+        <div class="section-content">
+          <pre id="markdown-output" class="markdown-output"></pre>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
