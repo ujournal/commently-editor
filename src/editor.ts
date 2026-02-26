@@ -67,6 +67,39 @@ function normalizeHeadingLevelsInContent(
   );
 }
 
+/** On copy, puts the selected content as markdown in the clipboard (text/plain). */
+const MarkdownCopy = Extension.create({
+  name: "markdownCopy",
+
+  addProseMirrorPlugins() {
+    const editor = this.editor;
+    return [
+      new Plugin({
+        props: {
+          handleDOMEvents: {
+            copy(view, event) {
+              const { state } = view;
+              const { selection } = state;
+              const { from, to } = selection;
+              if (from === to || !editor.markdown) return false;
+              const slice = state.doc.slice(from, to);
+              if (slice.content.size === 0) return false;
+              const content = slice.content.content.map((node) => node.toJSON());
+              const docJson = { type: "doc", content };
+              let markdown = editor.markdown.serialize(docJson);
+              markdown = cleanupMarkdownOutput(markdown);
+              event.preventDefault();
+              event.clipboardData?.clearData();
+              event.clipboardData?.setData("text/plain", markdown);
+              return true;
+            },
+          },
+        },
+      }),
+    ];
+  },
+});
+
 /** Intercepts paste of plain-text markdown and inserts formatted content. */
 const MarkdownPaste = Extension.create<{
   headingLevels: number[];
@@ -146,6 +179,7 @@ export function initEditor({
       customEmbedHandler: embedHandlerTemplate ?? null,
     }),
     Markdown,
+    MarkdownCopy,
     MarkdownPaste.configure({ headingLevels }),
     ...(bubbleMenuElement
       ? [
