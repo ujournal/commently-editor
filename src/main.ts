@@ -17,7 +17,7 @@ export const editor = initEditor({
   content: exampleMd,
   bubbleMenuElement: bubbleMenuEl,
   // Pipe generic embed URLs through your backend; use {url} in the template.
-  embedHandlerTemplate: "https://custom-handler.com/embed?url={url}",
+  embedHandlerTemplate: "https://steep-grass-92da.jmas-ukraine.workers.dev/?url={url}",
 });
 
 attachMarkdownOutput(editor, document.querySelector("#markdown-output")!);
