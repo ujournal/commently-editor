@@ -7,13 +7,14 @@ import {
   initEditor,
 } from "./editor";
 import { parseEmbedUrl } from "./embed";
+import exampleMd from "../example.md?raw";
 
 const editorEl = document.querySelector(".element") as HTMLElement;
 const bubbleMenuEl = document.querySelector("#bubble-menu") as HTMLElement;
 
 export const editor = initEditor({
   element: editorEl,
-  content: "Hello World!",
+  content: exampleMd,
   bubbleMenuElement: bubbleMenuEl,
   // Pipe generic embed URLs through your backend; use {url} in the template.
   embedHandlerTemplate: "https://custom-handler.com/embed?url={url}",
