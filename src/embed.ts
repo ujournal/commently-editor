@@ -30,11 +30,19 @@ export interface EmbedUrlResult {
  */
 const URL_PATTERN = /^https?:\/\/[^\s]+$/;
 
-/** Extract a single http(s) URL from pasted text (tolerates leading/trailing junk or invisible chars). */
+/** Extract a single http(s) URL from pasted text (tolerates leading/trailing junk or invisible chars). Prefers URL at start. */
 function extractUrlFromPastedText(text: string): string | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
   const match = trimmed.match(/^(https?:\/\/[^\s]+)/);
+  return match ? match[1] : null;
+}
+
+/** Extract the first http(s) URL found anywhere in the string (e.g. second line of "Title\nhttps://..."). */
+function extractUrlAnywhereInText(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/(https?:\/\/[^\s]+)/);
   return match ? match[1] : null;
 }
 
@@ -216,11 +224,12 @@ export const Embed = Node.create<EmbedOptions>({
               const urlFromHtml = extractUrlFromHtml(html);
               if (urlFromHtml) text = urlFromHtml;
             }
-            if (!text || text.indexOf("\n") >= 0) return false;
-            // Use regex to extract URL from pasted text (handles query params, trailing chars, etc.)
-            const urlFromText = extractUrlFromPastedText(text);
-            const urlToEmbed = urlFromText ?? text;
-            // if (/\s/.test(urlToEmbed)) return false;
+            if (!text) return false;
+            // Extract URL: at start of text, or anywhere in text (e.g. "Title\nhttps://..." from SoundCloud share)
+            let urlToEmbed =
+              extractUrlFromPastedText(text) ?? extractUrlAnywhereInText(text);
+            if (!urlToEmbed) urlToEmbed = text.indexOf("\n") < 0 && !/\s/.test(text) ? text : "";
+            if (/\s/.test(urlToEmbed)) return false;
             const parsed = parseEmbedUrl(urlToEmbed);
             if (!parsed) return false;
             const { state } = view;
