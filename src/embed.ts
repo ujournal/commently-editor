@@ -220,7 +220,7 @@ export const Embed = Node.create<EmbedOptions>({
             // Use regex to extract URL from pasted text (handles query params, trailing chars, etc.)
             const urlFromText = extractUrlFromPastedText(text);
             const urlToEmbed = urlFromText ?? text;
-            if (/\s/.test(urlToEmbed)) return false;
+            // if (/\s/.test(urlToEmbed)) return false;
             const parsed = parseEmbedUrl(urlToEmbed);
             if (!parsed) return false;
             const { state } = view;
