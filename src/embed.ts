@@ -232,18 +232,17 @@ export const Embed = Node.create<EmbedOptions>({
             if (!isEmptyLine) return false;
             // Only embed on empty first-level lines; skip when inside blockquote/list
             if (isInsideNestedBlock($pos)) return false;
-            editor
-              .chain()
-              .focus()
-              .insertContentAt(pos, {
-                type: nodeType.name,
-                attrs: {
-                  src: parsed.embedUrl,
-                  provider: parsed.provider,
-                  originalUrl: urlToEmbed,
-                },
-              })
-              .run();
+            // Replace the empty paragraph with the embed only (no extra line break)
+            const from = $pos.before();
+            const to = $pos.after();
+            const embedNode = nodeType.create({
+              src: parsed.embedUrl,
+              provider: parsed.provider,
+              originalUrl: urlToEmbed,
+            });
+            const tr = state.tr.replaceWith(from, to, embedNode);
+            view.dispatch(tr);
+            editor.commands.focus();
             return true;
           },
         },
