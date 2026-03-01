@@ -279,19 +279,28 @@ export const Embed = Node.create<EmbedOptions>({
           handlePaste(view, event) {
             const clipboardData = event.clipboardData;
             if (!clipboardData) return false;
-            let text =
+            const text =
               clipboardData.getData("text/plain")?.trim() ?? "";
+            const html = clipboardData.getData("text/html")?.trim() ?? "";
+            // Don't treat as URL paste when pasting HTML or long text — let default paste handle it.
+            // Single URLs can be long (e.g. SoundCloud with ?si=...&utm_*), so only skip on newlines or huge paste.
+            const isLongText =
+              text.indexOf("\n") >= 0 ||
+              text.length > 2000 ||
+              (/\s/.test(text) && text.length > 80);
+            const isHtmlContent = html.length > 200;
+            if (isLongText || isHtmlContent) return false;
             // When pasting from some apps (e.g. SoundCloud share), the URL may only be in text/html
-            if (!text || text.indexOf("\n") >= 0 || /\s/.test(text)) {
-              const html = clipboardData.getData("text/html")?.trim() ?? "";
+            let urlCandidate = text;
+            if (!urlCandidate && html) {
               const urlFromHtml = extractUrlFromHtml(html);
-              if (urlFromHtml) text = urlFromHtml;
+              if (urlFromHtml) urlCandidate = urlFromHtml;
             }
-            if (!text) return false;
+            if (!urlCandidate) return false;
             // Extract URL: at start of text, or anywhere in text (e.g. "Title\nhttps://..." from SoundCloud share)
             let urlToEmbed =
-              extractUrlFromPastedText(text) ?? extractUrlAnywhereInText(text);
-            if (!urlToEmbed) urlToEmbed = text.indexOf("\n") < 0 && !/\s/.test(text) ? text : "";
+              extractUrlFromPastedText(urlCandidate) ?? extractUrlAnywhereInText(urlCandidate);
+            if (!urlToEmbed) urlToEmbed = urlCandidate.indexOf("\n") < 0 && !/\s/.test(urlCandidate) ? urlCandidate : "";
             if (/\s/.test(urlToEmbed)) return false;
             const parsed = parseEmbedUrl(urlToEmbed);
             if (!parsed) return false;
