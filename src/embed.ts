@@ -45,6 +45,19 @@ export function parseEmbedUrl(input: string): EmbedUrlResult | null {
 /** Placeholder in customEmbedHandler for the encoded embed URL. */
 export const EMBED_HANDLER_URL_PLACEHOLDER = "{url}";
 
+/** Extract the first http(s) URL from pasted HTML (e.g. when clipboard has link only in text/html). */
+function extractUrlFromHtml(html: string): string | null {
+  if (!html.trim()) return null;
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const link = doc.querySelector("a[href^='http://'], a[href^='https://']");
+    const href = link?.getAttribute("href");
+    return href?.trim() ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export interface EmbedOptions {
   HTMLAttributes?: Record<string, string>;
   /**
@@ -177,10 +190,17 @@ export const Embed = Node.create<EmbedOptions>({
       new Plugin({
         props: {
           handlePaste(view, event) {
-            const text =
-              event.clipboardData?.getData?.("text/plain")?.trim?.() ?? "";
+            const clipboardData = event.clipboardData;
+            if (!clipboardData) return false;
+            let text =
+              clipboardData.getData("text/plain")?.trim() ?? "";
+            // When pasting from some apps (e.g. SoundCloud share), the URL may only be in text/html
+            if (!text || text.indexOf("\n") >= 0 || /\s/.test(text)) {
+              const html = clipboardData.getData("text/html")?.trim() ?? "";
+              const urlFromHtml = extractUrlFromHtml(html);
+              if (urlFromHtml) text = urlFromHtml;
+            }
             if (!text || text.indexOf("\n") >= 0) return false;
-            // Only treat as embed when the pasted content is solely a URL (empty line + nothing but URL)
             if (/\s/.test(text)) return false;
             const parsed = parseEmbedUrl(text);
             if (!parsed) return false;
