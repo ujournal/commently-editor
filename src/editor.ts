@@ -182,6 +182,11 @@ export function initEditor({
 }: EditorOptions) {
   const headingLevels = markdownPasteHeadingLevels ?? [...DEFAULT_MARKDOWN_PASTE_HEADING_LEVELS];
   const extensions = [
+    // Embed before StarterKit so its handlePaste runs first and can turn pasted URLs into embeds
+    // (otherwise StarterKit/default paste consumes the event when clipboard has text/html, e.g. SoundCloud).
+    Embed.configure({
+      customEmbedHandler: embedHandlerTemplate ?? null,
+    }),
     StarterKit.configure({
       heading: {
         levels: headingLevels as (1 | 2 | 3 | 4 | 5 | 6)[],
@@ -193,9 +198,6 @@ export function initEditor({
       },
     }),
     Image,
-    Embed.configure({
-      customEmbedHandler: embedHandlerTemplate ?? null,
-    }),
     Markdown,
     MarkdownCopy,
     MarkdownPaste.configure({ headingLevels }),

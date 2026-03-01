@@ -215,27 +215,22 @@ export const Embed = Node.create<EmbedOptions>({
         props: {
           handlePaste(view, event) {
             const clipboardData = event.clipboardData;
-            console.log({'!clipboardData': !clipboardData});
             if (!clipboardData) return false;
             let text =
               clipboardData.getData("text/plain")?.trim() ?? "";
             // When pasting from some apps (e.g. SoundCloud share), the URL may only be in text/html
-            console.log({ '!text || text.indexOf("\n")': !text || text.indexOf("\n") >= 0 || /\s/.test(text) })
             if (!text || text.indexOf("\n") >= 0 || /\s/.test(text)) {
               const html = clipboardData.getData("text/html")?.trim() ?? "";
               const urlFromHtml = extractUrlFromHtml(html);
               if (urlFromHtml) text = urlFromHtml;
             }
-            console.log({ '!text': !text });
             if (!text) return false;
             // Extract URL: at start of text, or anywhere in text (e.g. "Title\nhttps://..." from SoundCloud share)
             let urlToEmbed =
               extractUrlFromPastedText(text) ?? extractUrlAnywhereInText(text);
             if (!urlToEmbed) urlToEmbed = text.indexOf("\n") < 0 && !/\s/.test(text) ? text : "";
-            console.log({ space: /\s/.test(urlToEmbed) });
             if (/\s/.test(urlToEmbed)) return false;
             const parsed = parseEmbedUrl(urlToEmbed);
-            console.log({ parsed })
             if (!parsed) return false;
             const { state } = view;
             const pos = state.selection.from;
@@ -243,7 +238,6 @@ export const Embed = Node.create<EmbedOptions>({
             const parent = $pos.parent;
             const isEmptyLine =
               parent.content.size === 0 || parent.textContent.trim() === "";
-            console.log({ isEmptyLine });
             if (!isEmptyLine) return false;
             // Only embed on empty first-level lines; skip when inside blockquote/list
             if (isInsideNestedBlock($pos)) return false;
