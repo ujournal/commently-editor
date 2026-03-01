@@ -25,12 +25,28 @@ export interface EmbedUrlResult {
 }
 
 /**
+ * Matches a single http(s) URL including path and query string (e.g. SoundCloud links with ?si=...&utm_*).
+ * Used to extract or validate pasted URL before parsing.
+ */
+const URL_PATTERN = /^https?:\/\/[^\s]+$/;
+
+/** Extract a single http(s) URL from pasted text (tolerates leading/trailing junk or invisible chars). */
+function extractUrlFromPastedText(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(https?:\/\/[^\s]+)/);
+  return match ? match[1] : null;
+}
+
+/**
  * Returns embed result for any valid http(s) URL. Used when pasting a URL on an empty line.
  * No special handling for YouTube, Vimeo, or social sites—all URLs are treated as generic embeds.
  */
 export function parseEmbedUrl(input: string): EmbedUrlResult | null {
   const raw = input.trim();
   if (!raw) return null;
+  // Ensure the string looks like a single URL (handles query params, long paths, etc.)
+  if (!URL_PATTERN.test(raw)) return null;
 
   try {
     const url = new URL(raw.indexOf("http") === 0 ? raw : `https://${raw}`);
@@ -201,8 +217,11 @@ export const Embed = Node.create<EmbedOptions>({
               if (urlFromHtml) text = urlFromHtml;
             }
             if (!text || text.indexOf("\n") >= 0) return false;
-            if (/\s/.test(text)) return false;
-            const parsed = parseEmbedUrl(text);
+            // Use regex to extract URL from pasted text (handles query params, trailing chars, etc.)
+            const urlFromText = extractUrlFromPastedText(text);
+            const urlToEmbed = urlFromText ?? text;
+            if (/\s/.test(urlToEmbed)) return false;
+            const parsed = parseEmbedUrl(urlToEmbed);
             if (!parsed) return false;
             const { state } = view;
             const pos = state.selection.from;
@@ -221,7 +240,7 @@ export const Embed = Node.create<EmbedOptions>({
                 attrs: {
                   src: parsed.embedUrl,
                   provider: parsed.provider,
-                  originalUrl: text,
+                  originalUrl: urlToEmbed,
                 },
               })
               .run();
