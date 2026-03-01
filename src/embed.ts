@@ -235,7 +235,8 @@ export const Embed = Node.create<EmbedOptions>({
             const pos = state.selection.from;
             const $pos = state.doc.resolve(pos);
             const parent = $pos.parent;
-            const isEmptyLine = parent.content.size === 0;
+            const isEmptyLine =
+              parent.content.size === 0 || parent.textContent.trim() === "";
             if (!isEmptyLine) return false;
             // Only embed on empty first-level lines; skip when inside blockquote/list
             if (isInsideNestedBlock($pos)) return false;
