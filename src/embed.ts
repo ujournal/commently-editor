@@ -1,6 +1,6 @@
 import type { ResolvedPos } from "@tiptap/pm/model";
 import { Node } from "@tiptap/core";
-import { Plugin } from "@tiptap/pm/state";
+import { Plugin, TextSelection } from "@tiptap/pm/state";
 
 const NESTED_BLOCK_NAMES = [
   "blockquote",
@@ -15,6 +15,29 @@ function isInsideNestedBlock($pos: ResolvedPos): boolean {
     if (NESTED_BLOCK_NAMES.indexOf($pos.node(d).type.name) >= 0) return true;
   }
   return false;
+}
+
+export function addListenerForAdjustIframeSize() {
+  window.addEventListener("message", function (event) {
+    if (event.data && event.data.type === "commently-discover-resize" && typeof event.data.height === "number") {
+      // event.source is the window that sent the message (iframe's contentWindow)
+      const sourceWindow = event.source as Window | null;
+      if (sourceWindow && sourceWindow !== window) {
+        const iframes = document.querySelectorAll("iframe.embed-iframe");
+        for (const iframe of iframes) {
+          if (iframe.contentWindow === sourceWindow) {
+            const height = event.data.height + "px";
+            const parent = iframe.parentElement;
+            if (parent) {
+              parent.style.setProperty("--embed-height", height);
+            }
+            iframe.style.height = height;
+            break;
+          }
+        }
+      }
+    }
+  });
 }
 
 export type EmbedProvider = "generic";
@@ -216,6 +239,43 @@ export const Embed = Node.create<EmbedOptions>({
     return [
       new Plugin({
         props: {
+          handleKeyDown(view, event) {
+            if (event.key !== "Enter") return false;
+            const { state } = view;
+            const { selection } = state;
+            const { $from } = selection;
+            // At doc start (pos 0): insert new paragraph so Enter creates a new line
+            if (selection.from === 0) {
+              const paragraph = state.schema.nodes.paragraph.create();
+              const tr = state.tr
+                .insert(0, paragraph)
+                .setSelection(TextSelection.near(tr.doc.resolve(1)));
+              view.dispatch(tr);
+              editor.commands.focus();
+              return true;
+            }
+            if (isInsideNestedBlock($from)) return false;
+            const parent = $from.parent;
+            const text = parent.textContent.trim();
+            if (!text) return false;
+            const parsed = parseEmbedUrl(text);
+            if (!parsed) return false;
+            // Paragraph is only a URL: replace with embed and new paragraph
+            const from = $from.before($from.depth);
+            const to = $from.after($from.depth);
+            const embedNode = nodeType.create({
+              src: parsed.embedUrl,
+              provider: parsed.provider,
+              originalUrl: text,
+            });
+            const tr = state.tr
+              .replaceWith(from, to, embedNode)
+              .insert(from + 1, state.schema.nodes.paragraph.create());
+            view.dispatch(tr);
+            editor.commands.focus();
+            editor.commands.setTextSelection(from + 2);
+            return true;
+          },
           handlePaste(view, event) {
             const clipboardData = event.clipboardData;
             if (!clipboardData) return false;
@@ -236,17 +296,26 @@ export const Embed = Node.create<EmbedOptions>({
             const parsed = parseEmbedUrl(urlToEmbed);
             if (!parsed) return false;
             const { state } = view;
-            const pos = state.selection.from;
-            const $pos = state.doc.resolve(pos);
-            const parent = $pos.parent;
-            const isEmptyLine =
-              parent.content.size === 0 || parent.textContent.trim() === "";
-            if (!isEmptyLine) return false;
-            // Only embed on empty first-level lines; skip when inside blockquote/list
-            if (isInsideNestedBlock($pos)) return false;
-            // Replace the empty paragraph with the embed only (no extra line break)
-            const from = $pos.before();
-            const to = $pos.after();
+            const { from: selFrom, to: selTo } = state.selection;
+            const $from = state.doc.resolve(selFrom);
+            const $to = state.doc.resolve(selTo);
+            // Only embed on first-level blocks; skip when inside blockquote/list
+            if (isInsideNestedBlock($from) || isInsideNestedBlock($to))
+              return false;
+            // When cursor is at doc start (depth 0), use full doc content range
+            const from =
+              $from.depth === 0 ? 0 : $from.before($from.depth);
+            const to =
+              $to.depth === 0 ? state.doc.content.size : $to.after($to.depth);
+            // Only replace with embed when the selected range has no meaningful content (empty blocks only)
+            const slice = state.doc.slice(from, to);
+            let hasMeaningfulContent = false;
+            slice.content.forEach((node) => {
+              if (node.isText && node.text?.trim()) hasMeaningfulContent = true;
+              else if (node.content.size > 0) hasMeaningfulContent = true;
+            });
+            if (hasMeaningfulContent) return false;
+            // Replace the full selected block range with the embed
             const embedNode = nodeType.create({
               src: parsed.embedUrl,
               provider: parsed.provider,

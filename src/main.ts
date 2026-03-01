@@ -7,7 +7,7 @@ import {
   attachMarkdownOutput,
   initEditor,
 } from "./editor";
-import { parseEmbedUrl } from "./embed";
+import { addListenerForAdjustIframeSize, parseEmbedUrl } from "./embed";
 
 const editorEl = document.querySelector(".element") as HTMLElement;
 const bubbleMenuEl = document.querySelector("#bubble-menu") as HTMLElement;
@@ -24,6 +24,7 @@ attachMarkdownOutput(editor, document.querySelector("#markdown-output")!);
 attachImageAltMenu(editor, bubbleMenuEl);
 attachEmbedEditMenu(editor, bubbleMenuEl);
 attachLinkEditMenu(editor, bubbleMenuEl);
+addListenerForAdjustIframeSize();
 
 const insertImageBtn = document.querySelector("#insert-image-btn");
 if (insertImageBtn) {

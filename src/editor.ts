@@ -3,6 +3,7 @@ import { Markdown } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { BubbleMenu } from "@tiptap/extension-bubble-menu";
+import { Placeholder } from "@tiptap/extension-placeholder";
 import { NodeSelection, Plugin } from "@tiptap/pm/state";
 import { cleanupMarkdownOutput } from "./utils/string";
 import { Embed, parseEmbedUrl } from "./embed";
@@ -187,6 +188,10 @@ export function initEditor({
     Embed.configure({
       customEmbedHandler: embedHandlerTemplate ?? null,
     }),
+    Placeholder.configure({
+      placeholder: "Write something…",
+      showOnlyCurrent: false,
+    }),
     StarterKit.configure({
       heading: {
         levels: headingLevels as (1 | 2 | 3 | 4 | 5 | 6)[],
@@ -207,11 +212,36 @@ export function initEditor({
             element: bubbleMenuElement,
             shouldShow: ({ state, editor }) => {
               const { selection } = state;
+              const doc = state.doc;
+              // Never show at doc start when there's no real content (avoids "Embed URL" popup
+              // when cursor at 0 or when only node is an embed at 0).
+              if (selection.from <= 1) {
+                if (
+                  doc.childCount === 1 &&
+                  doc.firstChild?.content.size === 0
+                )
+                  return false;
+                if (
+                  doc.childCount === 2 &&
+                  ["embed", "image"].includes(doc.firstChild?.type.name ?? "") &&
+                  doc.child(1)?.content.size === 0
+                )
+                  return false;
+              }
               if (selection instanceof NodeSelection) {
                 const name = selection.node.type.name;
-                return name === "image" || name === "embed";
+                if (name === "image") return true;
+                if (name === "embed") {
+                  const url =
+                    selection.node.attrs.src ??
+                    selection.node.attrs.originalUrl;
+                  return Boolean(url?.trim());
+                }
+                return false;
               }
-              return editor.isActive("link");
+              if (!editor.isActive("link")) return false;
+              if (selection.empty && selection.from <= 1) return false;
+              return true;
             },
           }),
         ]
@@ -224,6 +254,9 @@ export function initEditor({
     content,
     contentType: "markdown",
     editorProps: {
+      attributes: {
+        class: "tiptap",
+      },
       handleClick(view, _pos, event) {
         const target = event.target as HTMLElement;
         if (target.closest("a") || target.closest(".embed-iframe")) {
@@ -234,6 +267,18 @@ export function initEditor({
       },
     },
   });
+  // Sync empty state to wrapper so placeholder CSS can target it
+  const placeholderText = "Write something…";
+  if (!element.getAttribute("data-placeholder")) {
+    element.setAttribute("data-placeholder", placeholderText);
+  }
+  const isEmpty = () => editor.state.doc.textContent.trim().length === 0;
+  const syncEmptyClass = () => {
+    element.classList.toggle("is-editor-empty", isEmpty());
+  };
+  editor.on("update", syncEmptyClass);
+  editor.on("selectionUpdate", syncEmptyClass);
+  syncEmptyClass();
   // Initial markdown is parsed by @tiptap/markdown and can produce h1; schema only allows headingLevels (e.g. 2–6). Normalize so markdown output matches.
   normalizeDocHeadingLevels(editor, headingLevels);
   return editor;
@@ -460,13 +505,17 @@ export function attachLinkEditMenu(
   };
 }
 
+const MARKDOWN_OUTPUT_PLACEHOLDER = "No content yet";
+
 export function attachMarkdownOutput(
   editor: Editor,
   element: HTMLElement,
 ): () => void {
   const updateMarkdownOutput = () => {
     if (element) {
-      element.textContent = cleanupMarkdownOutput(editor.getMarkdown());
+      const markdown = cleanupMarkdownOutput(editor.getMarkdown());
+      element.textContent = markdown || MARKDOWN_OUTPUT_PLACEHOLDER;
+      element.classList.toggle("is-empty", !markdown);
     }
   };
 
@@ -477,6 +526,7 @@ export function attachMarkdownOutput(
     editor.off("update", updateMarkdownOutput);
     if (element) {
       element.textContent = "";
+      element.classList.remove("is-empty");
     }
   };
 }

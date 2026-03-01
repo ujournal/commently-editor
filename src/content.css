@@ -139,8 +139,8 @@
   border-radius: 6px;
 }
 
-/* Placeholder when editor is empty */
-.editor-wrap .tiptap p.is-editor-empty:first-child::before {
+/* Placeholder when editor is empty (synced via .is-editor-empty on wrapper) */
+.editor-wrap.is-editor-empty::before {
   content: attr(data-placeholder);
   float: left;
   color: #9ca3af;

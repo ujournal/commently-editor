@@ -71,7 +71,7 @@
       .embed-wrapper::before {
         content: "";
         display: block;
-        padding-top: 56.25%;
+        padding-top: var(--embed-height, 56.25%);
       }
       .embed-wrapper:not(:is([data-embed-src])) {
         display: none;
@@ -140,6 +140,9 @@
         white-space: pre-wrap;
         word-break: break-word;
         color: #333;
+      }
+      .markdown-output.is-empty {
+        color: #9ca3af;
       }
     </style>
   </head>
