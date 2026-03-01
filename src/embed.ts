@@ -109,6 +109,9 @@ declare module "@tiptap/core" {
 export const Embed = Node.create<EmbedOptions>({
   name: "embed",
 
+  /** Run before StarterKit/default paste so URL paste → embed is handled first (e.g. SoundCloud with text/html). */
+  priority: 1000,
+
   group: "block",
   atom: true,
 

@@ -182,8 +182,8 @@ export function initEditor({
 }: EditorOptions) {
   const headingLevels = markdownPasteHeadingLevels ?? [...DEFAULT_MARKDOWN_PASTE_HEADING_LEVELS];
   const extensions = [
-    // Embed before StarterKit so its handlePaste runs first and can turn pasted URLs into embeds
-    // (otherwise StarterKit/default paste consumes the event when clipboard has text/html, e.g. SoundCloud).
+    // Embed uses priority: 1000 so its handlePaste runs before other plugins and can turn pasted URLs into embeds
+    // (otherwise default/StarterKit paste consumes the event when clipboard has text/html, e.g. SoundCloud).
     Embed.configure({
       customEmbedHandler: embedHandlerTemplate ?? null,
     }),
