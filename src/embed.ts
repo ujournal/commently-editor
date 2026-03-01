@@ -17,7 +17,7 @@ function isInsideNestedBlock($pos: ResolvedPos): boolean {
   return false;
 }
 
-export type EmbedProvider = "youtube" | "vimeo" | "twitter" | "generic";
+export type EmbedProvider = "generic";
 
 export interface EmbedUrlResult {
   embedUrl: string;
@@ -25,8 +25,8 @@ export interface EmbedUrlResult {
 }
 
 /**
- * Normalizes shared URLs to their embed form (iframe-friendly).
- * Returns null if the URL is not supported.
+ * Returns embed result for any valid http(s) URL. Used when pasting a URL on an empty line.
+ * No special handling for YouTube, Vimeo, or social sites—all URLs are treated as generic embeds.
  */
 export function parseEmbedUrl(input: string): EmbedUrlResult | null {
   const raw = input.trim();
@@ -34,53 +34,6 @@ export function parseEmbedUrl(input: string): EmbedUrlResult | null {
 
   try {
     const url = new URL(raw.indexOf("http") === 0 ? raw : `https://${raw}`);
-
-    // YouTube: watch, shorts, embed
-    if (
-      /^(www\.)?youtube\.com$/.test(url.hostname) ||
-      url.hostname === "youtu.be"
-    ) {
-      let videoId: string | null = null;
-      if (url.hostname === "youtu.be") {
-        videoId = url.pathname.slice(1).split("/")[0] || null;
-      } else {
-        videoId =
-          url.searchParams.get("v") ||
-          (url.pathname.indexOf("/shorts/") === 0
-            ? url.pathname.replace(/^\/shorts\//, "").split("/")[0]
-            : null);
-      }
-      if (videoId)
-        return {
-          embedUrl: `https://www.youtube.com/embed/${videoId}`,
-          provider: "youtube",
-        };
-    }
-
-    // Vimeo
-    if (/^(www\.)?vimeo\.com$/.test(url.hostname)) {
-      const id = url.pathname.replace(/^\//, "").split("/")[0];
-      if (id && /^\d+$/.test(id))
-        return {
-          embedUrl: `https://player.vimeo.com/video/${id}`,
-          provider: "vimeo",
-        };
-    }
-
-    // Twitter/X: extract status id for embed URL
-    if (
-      (url.hostname === "twitter.com" || url.hostname === "x.com") &&
-      /^\/\w+\/status\/\d+/.test(url.pathname)
-    ) {
-      const match = url.pathname.match(/\/status\/(\d+)/);
-      if (match)
-        return {
-          embedUrl: `https://platform.twitter.com/embed/tweet.html?id=${match[1]}`,
-          provider: "twitter",
-        };
-    }
-
-    // Any other https/http URL as generic embed (e.g. other sites, articles)
     if (url.protocol === "https:" || url.protocol === "http:")
       return { embedUrl: url.href, provider: "generic" };
   } catch {

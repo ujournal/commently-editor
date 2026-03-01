@@ -39,13 +39,13 @@ const insertEmbedBtn = document.querySelector("#insert-embed-btn");
 if (insertEmbedBtn) {
   insertEmbedBtn.addEventListener("click", () => {
     const raw = prompt(
-      "Paste a link (YouTube, Vimeo, Twitter/X, or any embed URL):",
+      "Paste a link (any URL will be embedded):",
     );
     if (raw == null || raw.trim() === "") return;
     const parsed = parseEmbedUrl(raw);
     if (!parsed) {
       alert(
-        "Could not recognize an embed URL. Try a full YouTube, Vimeo, or Twitter link.",
+        "Could not recognize a valid URL.",
       );
       return;
     }
