@@ -1,6 +1,6 @@
 import { Node } from "@tiptap/core";
 import type { ResolvedPos } from "@tiptap/pm/model";
-import { Plugin, TextSelection } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, TextSelection } from "@tiptap/pm/state";
 
 const NESTED_BLOCK_NAMES = [
   "blockquote",
@@ -272,9 +272,27 @@ export const Embed = Node.create<EmbedOptions>({
             // At doc start (pos 0): insert new paragraph so Enter creates a new line
             if (selection.from === 0) {
               const paragraph = state.schema.nodes.paragraph.create();
-              const tr = state.tr
-                .insert(0, paragraph)
-                .setSelection(TextSelection.near(tr.doc.resolve(1)));
+              const tr0 = state.tr.insert(0, paragraph);
+              const tr = tr0.setSelection(
+                TextSelection.near(tr0.doc.resolve(1)),
+              );
+              view.dispatch(tr);
+              editor.commands.focus();
+              return true;
+            }
+            // When embed is selected, Enter inserts a paragraph after it and moves cursor there
+            if (
+              selection instanceof NodeSelection &&
+              selection.node.type === nodeType
+            ) {
+              const afterEmbed = selection.to;
+              const tr0 = state.tr.insert(
+                afterEmbed,
+                state.schema.nodes.paragraph.create(),
+              );
+              const tr = tr0.setSelection(
+                TextSelection.near(tr0.doc.resolve(afterEmbed + 1)),
+              );
               view.dispatch(tr);
               editor.commands.focus();
               return true;
