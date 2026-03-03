@@ -16,8 +16,8 @@ export const editor = initEditor({
   element: editorEl,
   content: exampleMd,
   bubbleMenuElement: bubbleMenuEl,
-  // Pipe generic embed URLs through your backend; use {url} in the template.
-  embedHandlerTemplate: "https://discover.commently.top/?url={url}",
+  // Pipe generic embed URLs through your backend. Use {base64_url} (path) or {url} (query).
+  embedHandlerTemplate: "https://discover.commently.top/{base64_url}",
 });
 
 attachMarkdownOutput(editor, document.querySelector("#markdown-output")!);
@@ -39,15 +39,11 @@ if (insertImageBtn) {
 const insertEmbedBtn = document.querySelector("#insert-embed-btn");
 if (insertEmbedBtn) {
   insertEmbedBtn.addEventListener("click", () => {
-    const raw = prompt(
-      "Paste a link (any URL will be embedded):",
-    );
+    const raw = prompt("Paste a link (any URL will be embedded):");
     if (raw == null || raw.trim() === "") return;
     const parsed = parseEmbedUrl(raw);
     if (!parsed) {
-      alert(
-        "Could not recognize a valid URL.",
-      );
+      alert("Could not recognize a valid URL.");
       return;
     }
     editor

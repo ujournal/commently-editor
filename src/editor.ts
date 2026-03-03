@@ -1,12 +1,12 @@
 import { Editor, Extension } from "@tiptap/core";
-import { Markdown } from "@tiptap/markdown";
-import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
 import { BubbleMenu } from "@tiptap/extension-bubble-menu";
+import Image from "@tiptap/extension-image";
 import { Placeholder } from "@tiptap/extension-placeholder";
+import { Markdown } from "@tiptap/markdown";
 import { NodeSelection, Plugin } from "@tiptap/pm/state";
-import { cleanupMarkdownOutput } from "./utils/string";
+import StarterKit from "@tiptap/starter-kit";
 import { Embed, parseEmbedUrl } from "./embed";
+import { cleanupMarkdownOutput } from "./utils/string";
 
 /** Heuristic: does the pasted text look like markdown we can convert? */
 function looksLikeMarkdown(text: string): boolean {
@@ -57,7 +57,11 @@ function normalizeHeadingLevelsInContent(
   node: JSONContent,
   allowedLevels: number[],
 ): void {
-  if (node.type === "heading" && node.attrs && typeof node.attrs.level === "number") {
+  if (
+    node.type === "heading" &&
+    node.attrs &&
+    typeof node.attrs.level === "number"
+  ) {
     node.attrs = {
       ...node.attrs,
       level: clampHeadingLevel(node.attrs.level, allowedLevels),
@@ -69,11 +73,18 @@ function normalizeHeadingLevelsInContent(
 }
 
 /** Normalize heading levels in the current doc so they match allowed levels (e.g. clamp h1 → h2). */
-function normalizeDocHeadingLevels(editor: Editor, allowedLevels: number[]): void {
+function normalizeDocHeadingLevels(
+  editor: Editor,
+  allowedLevels: number[],
+): void {
   const minLevel = allowedLevels.length > 0 ? Math.min(...allowedLevels) : 1;
   const updates: { pos: number; attrs: Record<string, unknown> }[] = [];
   editor.state.doc.descendants((node, pos) => {
-    if (node.type.name === "heading" && typeof node.attrs.level === "number" && node.attrs.level < minLevel) {
+    if (
+      node.type.name === "heading" &&
+      typeof node.attrs.level === "number" &&
+      node.attrs.level < minLevel
+    ) {
       updates.push({ pos, attrs: { ...node.attrs, level: minLevel } });
     }
   });
@@ -103,7 +114,9 @@ const MarkdownCopy = Extension.create({
               if (from === to || !editor.markdown) return false;
               const slice = state.doc.slice(from, to);
               if (slice.content.size === 0) return false;
-              const content = slice.content.content.map((node) => node.toJSON());
+              const content = slice.content.content.map((node) =>
+                node.toJSON(),
+              );
               const docJson = { type: "doc", content };
               let markdown = editor.markdown.serialize(docJson);
               markdown = cleanupMarkdownOutput(markdown);
@@ -163,8 +176,8 @@ interface EditorOptions {
   /** Element for the bubble menu (image alt + embed URL). If provided, BubbleMenu is registered. */
   bubbleMenuElement?: HTMLElement;
   /**
-   * URL template for generic embeds. Use {url} where the encoded embed URL should go.
-   * Example: "https://custom-handler.com/embed?url={url}"
+   * URL template for generic embeds. Use {base64_url} (path) or {url} (query).
+   * Example: "https://discover.commently.top/{base64_url}" or "https://handler.com/?url={url}"
    */
   embedHandlerTemplate?: string | null;
   /**
@@ -181,7 +194,9 @@ export function initEditor({
   embedHandlerTemplate,
   markdownPasteHeadingLevels,
 }: EditorOptions) {
-  const headingLevels = markdownPasteHeadingLevels ?? [...DEFAULT_MARKDOWN_PASTE_HEADING_LEVELS];
+  const headingLevels = markdownPasteHeadingLevels ?? [
+    ...DEFAULT_MARKDOWN_PASTE_HEADING_LEVELS,
+  ];
   const extensions = [
     // Embed uses priority: 1000 so its handlePaste runs before other plugins and can turn pasted URLs into embeds
     // (otherwise default/StarterKit paste consumes the event when clipboard has text/html, e.g. SoundCloud).
@@ -216,14 +231,13 @@ export function initEditor({
               // Never show at doc start when there's no real content (avoids "Embed URL" popup
               // when cursor at 0 or when only node is an embed at 0).
               if (selection.from <= 1) {
-                if (
-                  doc.childCount === 1 &&
-                  doc.firstChild?.content.size === 0
-                )
+                if (doc.childCount === 1 && doc.firstChild?.content.size === 0)
                   return false;
                 if (
                   doc.childCount === 2 &&
-                  ["embed", "image"].includes(doc.firstChild?.type.name ?? "") &&
+                  ["embed", "image"].includes(
+                    doc.firstChild?.type.name ?? "",
+                  ) &&
                   doc.child(1)?.content.size === 0
                 )
                   return false;
@@ -286,8 +300,12 @@ export function initEditor({
 
 function getBubblePanels(menuElement: HTMLElement) {
   return {
-    image: menuElement.querySelector<HTMLElement>('[data-bubble-panel="image"]'),
-    embed: menuElement.querySelector<HTMLElement>('[data-bubble-panel="embed"]'),
+    image: menuElement.querySelector<HTMLElement>(
+      '[data-bubble-panel="image"]',
+    ),
+    embed: menuElement.querySelector<HTMLElement>(
+      '[data-bubble-panel="embed"]',
+    ),
     link: menuElement.querySelector<HTMLElement>('[data-bubble-panel="link"]'),
   };
 }
@@ -301,7 +319,7 @@ export function attachImageAltMenu(
   menuElement: HTMLElement,
 ): () => void {
   const input = menuElement.querySelector<HTMLInputElement>(
-    'input[data-image-alt]',
+    "input[data-image-alt]",
   );
   const panels = getBubblePanels(menuElement);
   if (!input) return () => {};
@@ -356,7 +374,7 @@ export function attachEmbedEditMenu(
   menuElement: HTMLElement,
 ): () => void {
   const srcInput = menuElement.querySelector<HTMLInputElement>(
-    'input[data-embed-src]',
+    "input[data-embed-src]",
   );
   const panels = getBubblePanels(menuElement);
   if (!srcInput) return () => {};
@@ -421,10 +439,10 @@ export function attachLinkEditMenu(
   menuElement: HTMLElement,
 ): () => void {
   const urlInput = menuElement.querySelector<HTMLInputElement>(
-    'input[data-link-url]',
+    "input[data-link-url]",
   );
   const labelInput = menuElement.querySelector<HTMLInputElement>(
-    'input[data-link-label]',
+    "input[data-link-label]",
   );
   const panels = getBubblePanels(menuElement);
   if (!urlInput || !labelInput) return () => {};

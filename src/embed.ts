@@ -1,5 +1,5 @@
-import type { ResolvedPos } from "@tiptap/pm/model";
 import { Node } from "@tiptap/core";
+import type { ResolvedPos } from "@tiptap/pm/model";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
 
 const NESTED_BLOCK_NAMES = [
@@ -19,7 +19,11 @@ function isInsideNestedBlock($pos: ResolvedPos): boolean {
 
 export function addListenerForAdjustIframeSize() {
   window.addEventListener("message", function (event) {
-    if (event.data && event.data.type === "commently-discover-resize" && typeof event.data.height === "number") {
+    if (
+      event.data &&
+      event.data.type === "commently-discover-resize" &&
+      typeof event.data.height === "number"
+    ) {
       // event.source is the window that sent the message (iframe's contentWindow)
       const sourceWindow = event.source as Window | null;
       if (sourceWindow && sourceWindow !== window) {
@@ -89,8 +93,10 @@ export function parseEmbedUrl(input: string): EmbedUrlResult | null {
   return null;
 }
 
-/** Placeholder in customEmbedHandler for the encoded embed URL. */
+/** Placeholder in customEmbedHandler for the encoded embed URL (query/form style). */
 export const EMBED_HANDLER_URL_PLACEHOLDER = "{url}";
+/** Placeholder for the embed URL as URL-safe base64 (path segment). */
+export const EMBED_HANDLER_BASE64_PLACEHOLDER = "{base64_url}";
 
 /** Extract the first http(s) URL from pasted HTML (e.g. when clipboard has link only in text/html). */
 function extractUrlFromHtml(html: string): string | null {
@@ -108,9 +114,10 @@ function extractUrlFromHtml(html: string): string | null {
 export interface EmbedOptions {
   HTMLAttributes?: Record<string, string>;
   /**
-   * URL template for generic embeds. The original URL is substituted where
-   * `{url}` appears, as encodeURIComponent(originalUrl).
-   * Example: "https://custom-handler.com/embed?url={url}"
+   * URL template for generic embeds. Placeholders:
+   * - `{url}`: embed URL as encodeURIComponent (query/form style).
+   * - `{base64_url}`: embed URL as URL-safe base64 (path segment).
+   * Example: "https://discover.commently.top/{base64_url}" or "https://handler.com/?url={url}"
    * When not set, generic embeds use the stored URL as the iframe src.
    */
   customEmbedHandler?: string | null;
@@ -156,7 +163,8 @@ export const Embed = Node.create<EmbedOptions>({
       provider: {
         default: "generic",
         parseHTML: (el) =>
-          (el.getAttribute("data-embed-provider") as EmbedProvider) || "generic",
+          (el.getAttribute("data-embed-provider") as EmbedProvider) ||
+          "generic",
         renderHTML: (attrs) =>
           attrs.provider
             ? { "data-embed-provider": String(attrs.provider) }
@@ -188,9 +196,22 @@ export const Embed = Node.create<EmbedOptions>({
     let src = node.attrs.src;
     const provider = node.attrs.provider || "generic";
     const handler = this.options.customEmbedHandler;
-    if (provider === "generic" && handler && typeof handler === "string" && src) {
+    if (
+      provider === "generic" &&
+      handler &&
+      typeof handler === "string" &&
+      src
+    ) {
       const encoded = encodeURIComponent(src);
-      src = handler.split(EMBED_HANDLER_URL_PLACEHOLDER).join(encoded);
+      const base64Url = btoa(encodeURIComponent(src))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+      src = handler
+        .split(EMBED_HANDLER_URL_PLACEHOLDER)
+        .join(encoded)
+        .split(EMBED_HANDLER_BASE64_PLACEHOLDER)
+        .join(base64Url);
     }
     const merged = { ...this.options.HTMLAttributes, ...HTMLAttributes };
     merged["data-node-type"] = "embed";
@@ -205,7 +226,11 @@ export const Embed = Node.create<EmbedOptions>({
     ]
       .filter(Boolean)
       .join(" ");
-    return ["div", merged, ["iframe", { src, class: "embed-iframe", title: "Embed" }]];
+    return [
+      "div",
+      merged,
+      ["iframe", { src, class: "embed-iframe", title: "Embed" }],
+    ];
   },
 
   renderMarkdown(node) {
@@ -279,8 +304,7 @@ export const Embed = Node.create<EmbedOptions>({
           handlePaste(view, event) {
             const clipboardData = event.clipboardData;
             if (!clipboardData) return false;
-            const text =
-              clipboardData.getData("text/plain")?.trim() ?? "";
+            const text = clipboardData.getData("text/plain")?.trim() ?? "";
             const html = clipboardData.getData("text/html")?.trim() ?? "";
             // Don't treat as URL paste when pasting HTML or long text — let default paste handle it.
             // Single URLs can be long (e.g. SoundCloud with ?si=...&utm_*), so only skip on newlines or huge paste.
@@ -299,8 +323,13 @@ export const Embed = Node.create<EmbedOptions>({
             if (!urlCandidate) return false;
             // Extract URL: at start of text, or anywhere in text (e.g. "Title\nhttps://..." from SoundCloud share)
             let urlToEmbed =
-              extractUrlFromPastedText(urlCandidate) ?? extractUrlAnywhereInText(urlCandidate);
-            if (!urlToEmbed) urlToEmbed = urlCandidate.indexOf("\n") < 0 && !/\s/.test(urlCandidate) ? urlCandidate : "";
+              extractUrlFromPastedText(urlCandidate) ??
+              extractUrlAnywhereInText(urlCandidate);
+            if (!urlToEmbed)
+              urlToEmbed =
+                urlCandidate.indexOf("\n") < 0 && !/\s/.test(urlCandidate)
+                  ? urlCandidate
+                  : "";
             if (/\s/.test(urlToEmbed)) return false;
             const parsed = parseEmbedUrl(urlToEmbed);
             if (!parsed) return false;
@@ -312,8 +341,7 @@ export const Embed = Node.create<EmbedOptions>({
             if (isInsideNestedBlock($from) || isInsideNestedBlock($to))
               return false;
             // When cursor is at doc start (depth 0), use full doc content range
-            const from =
-              $from.depth === 0 ? 0 : $from.before($from.depth);
+            const from = $from.depth === 0 ? 0 : $from.before($from.depth);
             const to =
               $to.depth === 0 ? state.doc.content.size : $to.after($to.depth);
             // Only replace with embed when the selected range has no meaningful content (empty blocks only)
