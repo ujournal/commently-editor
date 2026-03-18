@@ -65,6 +65,82 @@ export function filterToSafeText(str: string): string {
   return result;
 }
 
+export function rewriteImageSrcUrlWithDims(
+  src: string,
+  width: number | null,
+  height: number | null,
+): string {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || !width || !height) {
+    return src;
+  }
+
+  // Data/blob URLs can't be safely resized with query params.
+  if (src.startsWith("data:") || src.startsWith("blob:")) return src;
+
+  // Split off fragment so we don't treat it as query.
+  const hashIndex = src.indexOf("#");
+  const withoutFragment = hashIndex >= 0 ? src.slice(0, hashIndex) : src;
+  const fragment = hashIndex >= 0 ? src.slice(hashIndex) : "";
+
+  const queryIndex = withoutFragment.indexOf("?");
+  const base =
+    queryIndex >= 0 ? withoutFragment.slice(0, queryIndex) : withoutFragment;
+  const queryRaw = queryIndex >= 0 ? withoutFragment.slice(queryIndex + 1) : "";
+
+  // Normalize HTML entity form that can show up in pasted HTML.
+  const query = queryRaw.replace(/&amp;/gi, "&");
+
+  const tokens = query
+    ? query
+        .split("&")
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0)
+    : [];
+
+  // Drop existing w/h so we can set them to the provided dimensions.
+  const filtered = tokens.filter((t) => {
+    const key = t.split("=", 1)[0];
+    return key !== "w" && key !== "h";
+  });
+
+  filtered.push(`w=${width}`);
+  filtered.push(`h=${height}`);
+
+  const newQuery = filtered.join("&");
+  if (!base) return src;
+  return queryIndex >= 0 ? `${base}?${newQuery}${fragment}` : `${base}?${newQuery}${fragment}`;
+}
+
+export function rewriteMarkdownImageSrcsWithDims(
+  markdown: string,
+  imageDims: Array<{ width: number | null; height: number | null }>,
+): string {
+  let idx = 0;
+
+  // Inline Markdown images: ![alt](src "optional title")
+  markdown = markdown.replace(
+    /!\[([^\]]*)\]\(([^)]+)\)/g,
+    (fullMatch, alt: string, inside: string) => {
+      const dims = imageDims[idx];
+      idx += 1;
+      if (!dims) return fullMatch;
+
+      const m = inside.trim().match(/^(\S+)(.*)$/s);
+      const src = m?.[1] ?? inside.trim();
+      const rest = m?.[2] ?? "";
+
+      const rewrittenSrc = rewriteImageSrcUrlWithDims(
+        src,
+        dims.width,
+        dims.height,
+      );
+      return `![${alt}](${rewrittenSrc}${rest})`;
+    },
+  );
+
+  return markdown;
+}
+
 /**
  * True if the line is empty, only whitespace, or only &nbsp; (entity or character).
  */

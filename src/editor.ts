@@ -6,7 +6,10 @@ import { Markdown } from "@tiptap/markdown";
 import { NodeSelection, Plugin } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import { Embed, parseEmbedUrl } from "./embed";
-import { cleanupMarkdownOutput } from "./utils/string";
+import {
+  cleanupMarkdownOutput,
+  rewriteMarkdownImageSrcsWithDims,
+} from "./utils/string";
 
 /** Heuristic: does the pasted text look like markdown we can convert? */
 function looksLikeMarkdown(text: string): boolean {
@@ -51,6 +54,44 @@ function clampHeadingLevel(level: number, allowed: number[]): number {
   return allowed.reduce((prev, curr) =>
     Math.abs(curr - level) < Math.abs(prev - level) ? curr : prev,
   );
+}
+
+function getMeasuredImageDims(
+  img: HTMLImageElement | null,
+): { width: number | null; height: number | null } {
+  if (!img) return { width: null, height: null };
+
+  const naturalW = typeof img.naturalWidth === "number" ? img.naturalWidth : 0;
+  const naturalH = typeof img.naturalHeight === "number" ? img.naturalHeight : 0;
+
+  let w = naturalW;
+  let h = naturalH;
+
+  // Fallback to rendered size if the image isn't loaded yet.
+  if (w <= 0 || h <= 0) {
+    const rect = img.getBoundingClientRect();
+    w = Math.round(rect.width);
+    h = Math.round(rect.height);
+  }
+
+  // Final fallback: parse w/h from the URL query string (if already present).
+  if (w <= 0 || h <= 0) {
+    const rawSrc = img.currentSrc || img.src || "";
+    try {
+      const url = new URL(rawSrc, window.location.href);
+      const wParam = url.searchParams.get("w");
+      const hParam = url.searchParams.get("h");
+      const parsedW = wParam ? Number(wParam) : NaN;
+      const parsedH = hParam ? Number(hParam) : NaN;
+      if (Number.isFinite(parsedW) && parsedW > 0) w = Math.round(parsedW);
+      if (Number.isFinite(parsedH) && parsedH > 0) h = Math.round(parsedH);
+    } catch {
+      // ignore invalid URL
+    }
+  }
+
+  if (w <= 0 || h <= 0) return { width: null, height: null };
+  return { width: w, height: h };
 }
 
 function normalizeHeadingLevelsInContent(
@@ -119,6 +160,23 @@ const MarkdownCopy = Extension.create({
               );
               const docJson = { type: "doc", content };
               let markdown = editor.markdown.serialize(docJson);
+
+              // Replace image URLs with resized versions using measured dims.
+              // We align image order with ProseMirror doc traversal order.
+              const imageDims: Array<{
+                width: number | null;
+                height: number | null;
+              }> = [];
+              state.doc.nodesBetween(from, to, (node, pos) => {
+                if (node.type.name !== "image") return;
+                const dom = editor.view.nodeDOM(pos) as HTMLImageElement | null;
+                imageDims.push(getMeasuredImageDims(dom));
+              });
+
+              markdown = rewriteMarkdownImageSrcsWithDims(
+                markdown,
+                imageDims,
+              );
               markdown = cleanupMarkdownOutput(markdown);
               event.preventDefault();
               event.clipboardData?.clearData();
@@ -444,22 +502,85 @@ export function attachMarkdownOutput(
   editor: Editor,
   element: HTMLElement,
 ): () => void {
+  const editorRoot = editor.view.dom as HTMLElement;
+
+  let rafId: number | null = null;
+  const scheduleUpdate = () => {
+    if (rafId != null) return;
+    rafId = window.requestAnimationFrame(() => {
+      rafId = null;
+      updateMarkdownOutput();
+    });
+  };
+
+  const onImageLoadOrError = () => scheduleUpdate();
+  const knownImgs = new Set<HTMLImageElement>();
+
   const updateMarkdownOutput = () => {
     if (element) {
-      const markdown = cleanupMarkdownOutput(editor.getMarkdown());
+      const raw = editor.getMarkdown();
+
+      // Measure images from the live DOM so `w`/`h` in markdown are real.
+      const imageDims: Array<{
+        width: number | null;
+        height: number | null;
+      }> = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name !== "image") return;
+        const dom = editor.view.nodeDOM(pos) as HTMLImageElement | null;
+        imageDims.push(getMeasuredImageDims(dom));
+      });
+
+      const markdown = cleanupMarkdownOutput(
+        rewriteMarkdownImageSrcsWithDims(raw, imageDims),
+      );
+
       element.textContent = markdown || MARKDOWN_OUTPUT_PLACEHOLDER;
       element.classList.toggle("is-empty", !markdown);
     }
+
+    // Ensure we re-render once images finish loading (dimensions may be 0
+    // until `naturalWidth/Height` are available).
+    const imgs = Array.from(editorRoot.querySelectorAll("img"));
+    for (const img of imgs) {
+      if (knownImgs.has(img)) continue;
+      knownImgs.add(img);
+      img.addEventListener("load", onImageLoadOrError);
+      img.addEventListener("error", onImageLoadOrError);
+
+      // If the image is already loaded, `load` won't fire again.
+      // Schedule an update so we can use its natural dimensions.
+      if (
+        img.complete &&
+        typeof img.naturalWidth === "number" &&
+        typeof img.naturalHeight === "number" &&
+        img.naturalWidth > 0 &&
+        img.naturalHeight > 0
+      ) {
+        scheduleUpdate();
+      }
+    }
   };
 
-  editor.on("update", updateMarkdownOutput);
+  editor.on("update", scheduleUpdate);
+  editor.on("selectionUpdate", scheduleUpdate);
   updateMarkdownOutput();
 
   return function detachMarkdownOutput() {
-    editor.off("update", updateMarkdownOutput);
+    editor.off("update", scheduleUpdate);
+    editor.off("selectionUpdate", scheduleUpdate);
     if (element) {
       element.textContent = "";
       element.classList.remove("is-empty");
+    }
+    for (const img of knownImgs) {
+      img.removeEventListener("load", onImageLoadOrError);
+      img.removeEventListener("error", onImageLoadOrError);
+    }
+    knownImgs.clear();
+    if (rafId != null) {
+      window.cancelAnimationFrame(rafId);
+      rafId = null;
     }
   };
 }
