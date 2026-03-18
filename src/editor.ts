@@ -211,11 +211,9 @@ export function initEditor({
       heading: {
         levels: headingLevels as (1 | 2 | 3 | 4 | 5 | 6)[],
       },
-      link: {
-        openOnClick: false,
-        enableClickSelection: true,
-        HTMLAttributes: { rel: "noopener noreferrer" },
-      },
+      // Link editing is intentionally disabled. We still embed pasted URLs
+      // via the custom `Embed` extension.
+      link: false,
     }),
     Image,
     Markdown,
@@ -235,9 +233,9 @@ export function initEditor({
                   return false;
                 if (
                   doc.childCount === 2 &&
-                  ["embed", "image"].includes(
+                  ["embed", "image"].indexOf(
                     doc.firstChild?.type.name ?? "",
-                  ) &&
+                  ) !== -1 &&
                   doc.child(1)?.content.size === 0
                 )
                   return false;
@@ -253,9 +251,7 @@ export function initEditor({
                 }
                 return false;
               }
-              if (!editor.isActive("link")) return false;
-              if (selection.empty && selection.from <= 1) return false;
-              return true;
+              return false;
             },
           }),
         ]
@@ -435,92 +431,11 @@ export function attachEmbedEditMenu(
  * link, syncs inputs with the link href and text, and updates the link on commit.
  */
 export function attachLinkEditMenu(
-  editor: Editor,
-  menuElement: HTMLElement,
+  _editor: Editor,
+  _menuElement: HTMLElement,
 ): () => void {
-  const urlInput = menuElement.querySelector<HTMLInputElement>(
-    "input[data-link-url]",
-  );
-  const labelInput = menuElement.querySelector<HTMLInputElement>(
-    "input[data-link-label]",
-  );
-  const panels = getBubblePanels(menuElement);
-  if (!urlInput || !labelInput) return () => {};
-
-  /** Only extend to full link when we first show the panel (to read label); never on every cursor move. */
-  let linkPanelWasVisible = false;
-
-  const syncFromSelection = () => {
-    if (!editor.isActive("link")) {
-      if (panels.link) panels.link.style.display = "none";
-      linkPanelWasVisible = false;
-      return;
-    }
-
-    const wasVisible = linkPanelWasVisible;
-    linkPanelWasVisible = true;
-
-    if (panels.link) panels.link.style.display = "";
-    if (panels.image) panels.image.style.display = "none";
-    if (panels.embed) panels.embed.style.display = "none";
-
-    const attrs = editor.getAttributes("link");
-    urlInput.value = attrs.href ?? "";
-
-    const { from, to } = editor.state.selection;
-    if (from !== to) {
-      labelInput.value = editor.state.doc.textBetween(from, to);
-    } else if (!wasVisible) {
-      // First time showing panel with a cursor in the link: extend once to read full label
-      editor.chain().extendMarkRange("link").run();
-    }
-    // If wasVisible and cursor: do not extend — allows user to move cursor out of the link
-  };
-
-  const commit = () => {
-    if (!editor.isActive("link")) return;
-    const href = urlInput.value.trim();
-    const label = labelInput.value.trim();
-    if (!href) {
-      editor.chain().focus().unsetLink().run();
-      return;
-    }
-    editor.chain().focus().extendMarkRange("link").run();
-    editor
-      .chain()
-      .focus()
-      .deleteSelection()
-      .insertContent({
-        type: "text",
-        text: label || href,
-        marks: [{ type: "link", attrs: { href } }],
-      })
-      .run();
-  };
-
-  editor.on("selectionUpdate", syncFromSelection);
-  urlInput.addEventListener("change", commit);
-  urlInput.addEventListener("blur", commit);
-  labelInput.addEventListener("change", commit);
-  labelInput.addEventListener("blur", commit);
-  const handleKeydown = (e: KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      (e.target as HTMLInputElement).blur();
-    }
-  };
-  urlInput.addEventListener("keydown", handleKeydown);
-  labelInput.addEventListener("keydown", handleKeydown);
-
-  return function detach() {
-    editor.off("selectionUpdate", syncFromSelection);
-    urlInput.removeEventListener("change", commit);
-    urlInput.removeEventListener("blur", commit);
-    labelInput.removeEventListener("change", commit);
-    labelInput.removeEventListener("blur", commit);
-    urlInput.removeEventListener("keydown", handleKeydown);
-    labelInput.removeEventListener("keydown", handleKeydown);
-  };
+  // Link editing is disabled (we only support converting pasted URLs to `embed` nodes).
+  return () => {};
 }
 
 const MARKDOWN_OUTPUT_PLACEHOLDER = "No content yet";

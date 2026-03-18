@@ -3,7 +3,6 @@ import exampleMd from "./data/example.md?raw";
 import {
   attachEmbedEditMenu,
   attachImageAltMenu,
-  attachLinkEditMenu,
   attachMarkdownOutput,
   initEditor,
 } from "./editor";
@@ -23,7 +22,6 @@ export const editor = initEditor({
 attachMarkdownOutput(editor, document.querySelector("#markdown-output")!);
 attachImageAltMenu(editor, bubbleMenuEl);
 attachEmbedEditMenu(editor, bubbleMenuEl);
-attachLinkEditMenu(editor, bubbleMenuEl);
 addListenerForAdjustIframeSize();
 
 const insertImageBtn = document.querySelector("#insert-image-btn");
@@ -58,33 +56,4 @@ if (insertEmbedBtn) {
   });
 }
 
-const linkBtn = document.querySelector("#link-btn");
-if (linkBtn) {
-  linkBtn.addEventListener("click", () => {
-    const { from, to } = editor.state.selection;
-    const hasSelection = from !== to;
-
-    if (editor.isActive("link")) {
-      editor.chain().focus().unsetLink().run();
-      return;
-    }
-
-    const url = prompt("Link URL:");
-    if (url == null || url.trim() === "") return;
-
-    if (hasSelection) {
-      editor.chain().focus().setLink({ href: url.trim() }).run();
-    } else {
-      const text = prompt("Link text (optional):")?.trim() || url.trim();
-      editor
-        .chain()
-        .focus()
-        .insertContent({
-          type: "text",
-          text,
-          marks: [{ type: "link", attrs: { href: url.trim() } }],
-        })
-        .run();
-    }
-  });
-}
+// Link editing is disabled.

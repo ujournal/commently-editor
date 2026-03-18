@@ -137,12 +137,6 @@
       .bubble-panel input[data-embed-src] {
         width: 220px;
       }
-      .bubble-panel input[data-link-url] {
-        width: 200px;
-      }
-      .bubble-panel input[data-link-label] {
-        width: 140px;
-      }
       .markdown-output {
         margin: 0;
         font-family: ui-monospace, monospace;
@@ -173,9 +167,6 @@
             >
               Embed
             </button>
-            <button type="button" id="link-btn" title="Add or edit link">
-              Link
-            </button>
           </div>
           <div class="element editor-wrap"></div>
           <div id="bubble-menu" class="image-alt-bubble">
@@ -199,26 +190,6 @@
                 id="embed-src-input"
                 data-embed-src
                 placeholder="Embed URL"
-              />
-            </div>
-            <div
-              data-bubble-panel="link"
-              class="bubble-panel"
-              style="display: none"
-            >
-              <label for="link-url-input">URL</label>
-              <input
-                type="url"
-                id="link-url-input"
-                data-link-url
-                placeholder="https://..."
-              />
-              <label for="link-label-input">Label</label>
-              <input
-                type="text"
-                id="link-label-input"
-                data-link-label
-                placeholder="Link text"
               />
             </div>
           </div>

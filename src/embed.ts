@@ -1,6 +1,7 @@
 import { Node } from "@tiptap/core";
 import type { ResolvedPos } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, TextSelection } from "@tiptap/pm/state";
+import { Fragment, Slice } from "@tiptap/pm/model";
 
 const NESTED_BLOCK_NAMES = [
   "blockquote",
@@ -27,8 +28,11 @@ export function addListenerForAdjustIframeSize() {
       // event.source is the window that sent the message (iframe's contentWindow)
       const sourceWindow = event.source as Window | null;
       if (sourceWindow && sourceWindow !== window) {
-        const iframes = document.querySelectorAll("iframe.embed-iframe");
-        for (const iframe of iframes) {
+        const iframes = document.querySelectorAll(
+          "iframe.embed-iframe",
+        );
+        for (let i = 0; i < iframes.length; i++) {
+          const iframe = iframes[i] as HTMLIFrameElement;
           if (iframe.contentWindow === sourceWindow) {
             const height = event.data.height + "px";
             const parent = iframe.parentElement;
@@ -324,31 +328,17 @@ export const Embed = Node.create<EmbedOptions>({
             if (!clipboardData) return false;
             const text = clipboardData.getData("text/plain")?.trim() ?? "";
             const html = clipboardData.getData("text/html")?.trim() ?? "";
-            // Don't treat as URL paste when pasting HTML or long text — let default paste handle it.
-            // Single URLs can be long (e.g. SoundCloud with ?si=...&utm_*), so only skip on newlines or huge paste.
-            const isLongText =
-              text.indexOf("\n") >= 0 ||
-              text.length > 2000 ||
-              (/\s/.test(text) && text.length > 80);
-            const isHtmlContent = html.length > 200;
-            if (isLongText || isHtmlContent) return false;
-            // When pasting from some apps (e.g. SoundCloud share), the URL may only be in text/html
-            let urlCandidate = text;
-            if (!urlCandidate && html) {
-              const urlFromHtml = extractUrlFromHtml(html);
-              if (urlFromHtml) urlCandidate = urlFromHtml;
-            }
-            if (!urlCandidate) return false;
-            // Extract URL: at start of text, or anywhere in text (e.g. "Title\nhttps://..." from SoundCloud share)
-            let urlToEmbed =
-              extractUrlFromPastedText(urlCandidate) ??
-              extractUrlAnywhereInText(urlCandidate);
-            if (!urlToEmbed)
-              urlToEmbed =
-                urlCandidate.indexOf("\n") < 0 && !/\s/.test(urlCandidate)
-                  ? urlCandidate
-                  : "";
+
+            // We only intercept when we can extract a valid http(s) URL.
+            // Plain-text paste: detect anywhere in the string.
+            // HTML paste: detect from the first <a href="...http(s)...">.
+            const urlFromText =
+              extractUrlFromPastedText(text) ?? extractUrlAnywhereInText(text);
+            const urlFromHtml = html ? extractUrlFromHtml(html) : null;
+            const urlToEmbed = urlFromText ?? urlFromHtml;
+            if (!urlToEmbed) return false;
             if (/\s/.test(urlToEmbed)) return false;
+
             const parsed = parseEmbedUrl(urlToEmbed);
             if (!parsed) return false;
             const { state } = view;
@@ -358,11 +348,84 @@ export const Embed = Node.create<EmbedOptions>({
             // Only embed on first-level blocks; skip when inside blockquote/list
             if (isInsideNestedBlock($from) || isInsideNestedBlock($to))
               return false;
-            // When cursor is at doc start (depth 0), use full doc content range
+
+            // Case 1: cursor (or selection) is within the same textblock.
+            // Replace that textblock with: [leftText, embed, rightText]
+            // so embeds land on their own newline even when the line already has text.
+            if ($from.sameParent($to) && $from.parent.isTextblock) {
+              const parent = $from.parent;
+              const from = $from.before($from.depth);
+              const to = $from.after($from.depth);
+              const startOffset = $from.parentOffset;
+              const endOffset = $to.parentOffset;
+
+              const embedNode = nodeType.create({
+                src: parsed.embedUrl,
+                provider: parsed.provider,
+                originalUrl: urlToEmbed,
+              });
+
+              const fullBlockSelected =
+                startOffset === 0 && endOffset === parent.content.size;
+
+              if (fullBlockSelected) {
+                const tr = state.tr.replaceWith(from, to, embedNode);
+                view.dispatch(tr);
+                editor.commands.focus();
+                return true;
+              }
+
+              const leftFragment = parent.content.cut(0, startOffset);
+              const rightFragment = parent.content.cut(
+                endOffset,
+                parent.content.size,
+              );
+
+              const leftBlock = parent.type.create(parent.attrs, leftFragment);
+              const rightBlock = parent.type.create(parent.attrs, rightFragment);
+
+              // If the cursor is at the very start, avoid inserting an extra
+              // leading empty textblock before the embed.
+              const includeLeftBlock = leftFragment.size > 0;
+
+              const replacementNodes = [
+                ...(includeLeftBlock ? [leftBlock] : []),
+                embedNode,
+                rightBlock,
+              ];
+
+              const tr = state.tr.replaceRange(
+                from,
+                to,
+                new Slice(Fragment.fromArray(replacementNodes), 0, 0),
+              );
+
+              // Place cursor at the start of the right-hand text (after the embed).
+              const rightContentPos =
+                includeLeftBlock
+                  ? from + leftBlock.nodeSize + embedNode.nodeSize + 1
+                  : from + embedNode.nodeSize + 1;
+              const resolved = tr.doc.resolve(
+                Math.min(rightContentPos, tr.doc.content.size),
+              );
+              tr.setSelection(TextSelection.near(resolved));
+
+              view.dispatch(tr);
+              editor.commands.focus();
+              return true;
+            }
+
+            // Case 2: fallback (doc-start / block-boundary paste). Keep the previous
+            // safety check so we don't delete unrelated content.
             const from = $from.depth === 0 ? 0 : $from.before($from.depth);
             const to =
               $to.depth === 0 ? state.doc.content.size : $to.after($to.depth);
-            // Only replace with embed when the selected range has no meaningful content (empty blocks only)
+            const embedNode = nodeType.create({
+              src: parsed.embedUrl,
+              provider: parsed.provider,
+              originalUrl: urlToEmbed,
+            });
+
             const slice = state.doc.slice(from, to);
             let hasMeaningfulContent = false;
             slice.content.forEach((node) => {
@@ -370,12 +433,7 @@ export const Embed = Node.create<EmbedOptions>({
               else if (node.content.size > 0) hasMeaningfulContent = true;
             });
             if (hasMeaningfulContent) return false;
-            // Replace the full selected block range with the embed
-            const embedNode = nodeType.create({
-              src: parsed.embedUrl,
-              provider: parsed.provider,
-              originalUrl: urlToEmbed,
-            });
+
             const tr = state.tr.replaceWith(from, to, embedNode);
             view.dispatch(tr);
             editor.commands.focus();
