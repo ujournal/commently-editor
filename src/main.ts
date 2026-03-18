@@ -7,6 +7,7 @@ import {
   initEditor,
 } from "./editor";
 import { addListenerForAdjustIframeSize, parseEmbedUrl } from "./embed";
+import { uploadImageFileToUrl } from "./imageUpload";
 
 const editorEl = document.querySelector(".element") as HTMLElement;
 const bubbleMenuEl = document.querySelector("#bubble-menu") as HTMLElement;
@@ -24,13 +25,44 @@ attachImageAltMenu(editor, bubbleMenuEl);
 attachEmbedEditMenu(editor, bubbleMenuEl);
 addListenerForAdjustIframeSize();
 
-const insertImageBtn = document.querySelector("#insert-image-btn");
+const insertImageBtn = document.querySelector<HTMLButtonElement>(
+  "#insert-image-btn",
+);
 if (insertImageBtn) {
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "image/*";
+  fileInput.style.display = "none";
+  document.body.appendChild(fileInput);
+
+  const setUploading = (isUploading: boolean) => {
+    insertImageBtn.disabled = isUploading;
+    insertImageBtn.textContent = isUploading ? "Uploading..." : "Image";
+  };
+
   insertImageBtn.addEventListener("click", () => {
-    const src = prompt("Image URL:");
-    if (src == null || src.trim() === "") return;
-    const alt = prompt("Alt text (optional):") ?? "";
-    editor.chain().focus().setImage({ src: src.trim(), alt: alt.trim() }).run();
+    fileInput.value = "";
+    fileInput.click(); // native "select image from disk" picker
+  });
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    // Use promise chain to avoid `async`/`await` (keeps TypeScript lib
+    // requirements minimal).
+    uploadImageFileToUrl(file)
+      .then((url) => {
+        editor.chain().focus().setImage({ src: url, alt: "" }).run();
+      })
+      .catch((err) => {
+        console.error(err);
+        alert("Image upload failed. Please try another file.");
+      })
+      .then(() => {
+        setUploading(false);
+      });
   });
 }
 

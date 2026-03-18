@@ -6,6 +6,7 @@ import { Markdown } from "@tiptap/markdown";
 import { NodeSelection, Plugin } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import { Embed, parseEmbedUrl } from "./embed";
+import { uploadImageFileToUrl } from "./imageUpload";
 import {
   cleanupMarkdownOutput,
   rewriteMarkdownImageSrcsWithDims,
@@ -230,6 +231,93 @@ const MarkdownPaste = Extension.create<{
   },
 });
 
+/** Intercepts clipboard image pastes, uploads the image, then inserts `image`. */
+const PasteImageUpload = Extension.create({
+  name: "pasteImageUpload",
+
+  addProseMirrorPlugins() {
+    const editor = this.editor;
+
+    const getFirstImageFile = (
+      clipboardData: DataTransfer,
+    ): File | null => {
+      const items = clipboardData.items;
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          const item = (items as unknown as Record<number, DataTransferItem>)[i];
+          if (!item) continue;
+          if (
+            item.kind === "file" &&
+            typeof item.type === "string" &&
+            item.type.indexOf("image/") === 0
+          ) {
+            const file = item.getAsFile();
+            if (file) return file;
+          }
+        }
+      }
+
+      // Some browsers may expose clipboard images via `files`.
+      const files = (clipboardData as unknown as { files?: FileList }).files;
+      if (files && files.length > 0) return files[0];
+
+      return null;
+    };
+
+    return [
+      new Plugin({
+        props: {
+          handlePaste(view, event) {
+            const clipboardData = event.clipboardData;
+            if (!clipboardData) return false;
+
+            const extractAltFromClipboard = (): string => {
+              const html = clipboardData.getData("text/html") ?? "";
+              if (!html) return "";
+
+              try {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, "text/html");
+                const imgs = doc.getElementsByTagName("img");
+                for (let i = 0; i < imgs.length; i++) {
+                  const alt = imgs[i].getAttribute("alt");
+                  if (alt && alt.trim()) return alt.trim();
+                }
+              } catch {
+                // ignore parsing errors
+              }
+              return "";
+            };
+
+            const file = getFirstImageFile(clipboardData);
+            if (!file) return false;
+
+            const alt = extractAltFromClipboard();
+
+            // Upload asynchronously, then insert.
+            event.preventDefault();
+
+            uploadImageFileToUrl(file)
+              .then((url) => {
+                editor
+                  .chain()
+                  .focus()
+                  .setImage({ src: url, alt })
+                  .run();
+              })
+              .catch((err) => {
+                console.error(err);
+                alert("Image upload failed. Please try again.");
+              });
+
+            return true;
+          },
+        },
+      }),
+    ];
+  },
+});
+
 interface EditorOptions {
   element: HTMLElement;
   content: string;
@@ -278,6 +366,7 @@ export function initEditor({
     Image,
     Markdown,
     MarkdownCopy,
+    PasteImageUpload,
     MarkdownPaste.configure({ headingLevels }),
     ...(bubbleMenuElement
       ? [
