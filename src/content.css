@@ -139,6 +139,21 @@
   border-radius: 6px;
 }
 
+/* ThumbHash placeholder while image uploads — full editor line width */
+.editor-wrap .tiptap p:has(> img[data-upload-temp-id]) {
+  width: 100%;
+  max-width: 100%;
+}
+
+.editor-wrap .tiptap img[data-upload-temp-id] {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  height: auto;
+  background: #f2f2f2;
+}
+
 /* Placeholder when editor is empty (synced via .is-editor-empty on wrapper) */
 .editor-wrap.is-editor-empty::before {
   content: attr(data-placeholder);

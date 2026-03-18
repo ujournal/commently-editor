@@ -22,6 +22,7 @@
     "@tiptap/markdown": "^3.20.0",
     "@tiptap/pm": "^3.20.0",
     "@tiptap/starter-kit": "^3.20.0",
-    "browser-image-compression": "^2.0.2"
+    "browser-image-compression": "^2.0.2",
+    "thumbhash": "^0.1.1"
   }
 }

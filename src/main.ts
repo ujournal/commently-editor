@@ -7,7 +7,7 @@ import {
   initEditor,
 } from "./editor";
 import { addListenerForAdjustIframeSize, parseEmbedUrl } from "./embed";
-import { uploadImageFileToUrl } from "./imageUpload";
+import { insertImageWithThumbhashUpload } from "./editor";
 
 const editorEl = document.querySelector(".element") as HTMLElement;
 const bubbleMenuEl = document.querySelector("#bubble-menu") as HTMLElement;
@@ -50,19 +50,9 @@ if (insertImageBtn) {
     if (!file) return;
 
     setUploading(true);
-    // Use promise chain to avoid `async`/`await` (keeps TypeScript lib
-    // requirements minimal).
-    uploadImageFileToUrl(file)
-      .then((url) => {
-        editor.chain().focus().setImage({ src: url, alt: "" }).run();
-      })
-      .catch((err) => {
-        console.error(err);
-        alert("Image upload failed. Please try another file.");
-      })
-      .then(() => {
-        setUploading(false);
-      });
+    insertImageWithThumbhashUpload(editor, file, "", {
+      onSettled: () => setUploading(false),
+    });
   });
 }
 

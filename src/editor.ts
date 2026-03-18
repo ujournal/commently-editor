@@ -6,10 +6,13 @@ import { Markdown } from "@tiptap/markdown";
 import { NodeSelection, Plugin } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
 import { Embed, parseEmbedUrl } from "./embed";
-import { uploadImageFileToUrl } from "./imageUpload";
+import {
+  startImageUploadWithThumbhashPreview,
+  uploadImageFileToUrl,
+} from "./imageUpload";
 import {
   cleanupMarkdownOutput,
-  rewriteMarkdownImageSrcsWithDims,
+  rewriteMarkdownImagesForOutput,
 } from "./utils/string";
 
 /** Heuristic: does the pasted text look like markdown we can convert? */
@@ -97,6 +100,129 @@ function getMeasuredImageDims(
   return { width: w, height: h };
 }
 
+/** Image node with optional `uploadTempId` to swap ThumbHash placeholder → final URL after upload. */
+const CommentlyImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      uploadTempId: {
+        default: null,
+        parseHTML: (element) =>
+          (element as HTMLElement).getAttribute("data-upload-temp-id"),
+        renderHTML: (attributes) => {
+          const id = attributes.uploadTempId as string | null;
+          if (!id) return {};
+          return { "data-upload-temp-id": id };
+        },
+      },
+    };
+  },
+});
+
+function newImageUploadTempId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `upl-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function replacePendingImageUpload(
+  editor: Editor,
+  uploadTempId: string,
+  finalSrc: string,
+): void {
+  const tr = editor.state.tr;
+  let updated = false;
+  editor.state.doc.descendants((node, pos) => {
+    if (updated) return;
+    if (
+      node.type.name === "image" &&
+      node.attrs.uploadTempId === uploadTempId
+    ) {
+      tr.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        src: finalSrc,
+        uploadTempId: null,
+      });
+      updated = true;
+    }
+  });
+  if (updated) editor.view.dispatch(tr);
+}
+
+function removePendingImageUpload(editor: Editor, uploadTempId: string): void {
+  let found: { pos: number; size: number; src: string } | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (found) return;
+    if (
+      node.type.name === "image" &&
+      node.attrs.uploadTempId === uploadTempId
+    ) {
+      found = {
+        pos,
+        size: node.nodeSize,
+        src: String(node.attrs.src ?? ""),
+      };
+    }
+  });
+  if (!found) return;
+  if (found.src.indexOf("blob:") === 0) {
+    try {
+      URL.revokeObjectURL(found.src);
+    } catch {
+      /* ignore */
+    }
+  }
+  const tr = editor.state.tr.delete(found.pos, found.pos + found.size);
+  editor.view.dispatch(tr);
+}
+
+/**
+ * Shows a ThumbHash blurry preview immediately, uploads in parallel, then replaces `src`.
+ */
+export function insertImageWithThumbhashUpload(
+  editor: Editor,
+  file: File,
+  alt: string,
+  options?: { onSettled?: () => void },
+): void {
+  const tempId = newImageUploadTempId();
+
+  startImageUploadWithThumbhashPreview(file)
+    .then(({ placeholderUrl, revokePlaceholder, finishUpload }) => {
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "image",
+          attrs: {
+            src: placeholderUrl,
+            alt,
+            uploadTempId: tempId,
+          },
+        })
+        .run();
+      return finishUpload().then(
+        (url) => {
+          replacePendingImageUpload(editor, tempId, url);
+          revokePlaceholder();
+        },
+        (err) => {
+          revokePlaceholder();
+          throw err;
+        },
+      );
+    })
+    .catch((err) => {
+      console.error(err);
+      removePendingImageUpload(editor, tempId);
+      alert("Image upload failed. Please try again.");
+    })
+    .then(() => {
+      options?.onSettled?.();
+    });
+}
+
 function normalizeHeadingLevelsInContent(
   node: JSONContent,
   allowedLevels: number[],
@@ -170,15 +296,18 @@ const MarkdownCopy = Extension.create({
                 width: number | null;
                 height: number | null;
               }> = [];
+              const imagePending: boolean[] = [];
               state.doc.nodesBetween(from, to, (node, pos) => {
                 if (node.type.name !== "image") return;
                 const dom = editor.view.nodeDOM(pos) as HTMLImageElement | null;
                 imageDims.push(getMeasuredImageDims(dom));
+                imagePending.push(Boolean(node.attrs.uploadTempId));
               });
 
-              markdown = rewriteMarkdownImageSrcsWithDims(
+              markdown = rewriteMarkdownImagesForOutput(
                 markdown,
                 imageDims,
+                imagePending,
               );
               markdown = cleanupMarkdownOutput(markdown);
               event.preventDefault();
@@ -297,18 +426,7 @@ const PasteImageUpload = Extension.create({
             // Upload asynchronously, then insert.
             event.preventDefault();
 
-            uploadImageFileToUrl(file)
-              .then((url) => {
-                editor
-                  .chain()
-                  .focus()
-                  .setImage({ src: url, alt })
-                  .run();
-              })
-              .catch((err) => {
-                console.error(err);
-                alert("Image upload failed. Please try again.");
-              });
+            insertImageWithThumbhashUpload(editor, file, alt);
 
             return true;
           },
@@ -363,7 +481,7 @@ export function initEditor({
       // via the custom `Embed` extension.
       link: false,
     }),
-    Image,
+    CommentlyImage,
     Markdown,
     MarkdownCopy,
     PasteImageUpload,
@@ -658,6 +776,19 @@ export function attachMarkdownOutput(
       return;
     }
 
+    const isPendingUpload = target.hasAttribute("data-upload-temp-id");
+
+    // Upload-in-progress previews (blob ThumbHash): don't treat as broken on
+    // load quirks; only remove if decode truly fails.
+    if (isPendingUpload) {
+      if (event?.type === "error") {
+        removeBrokenImageFromDoc(target);
+      } else {
+        scheduleUpdate();
+      }
+      return;
+    }
+
     // Remove broken pasted images.
     // - `error` event: image failed to load.
     // - `load` event but 0 natural dims: indicates an invalid/broken data URL.
@@ -684,14 +815,16 @@ export function attachMarkdownOutput(
         width: number | null;
         height: number | null;
       }> = [];
+      const imagePending: boolean[] = [];
       editor.state.doc.descendants((node, pos) => {
         if (node.type.name !== "image") return;
         const dom = editor.view.nodeDOM(pos) as HTMLImageElement | null;
         imageDims.push(getMeasuredImageDims(dom));
+        imagePending.push(Boolean(node.attrs.uploadTempId));
       });
 
       const markdown = cleanupMarkdownOutput(
-        rewriteMarkdownImageSrcsWithDims(raw, imageDims),
+        rewriteMarkdownImagesForOutput(raw, imageDims, imagePending),
       );
 
       element.textContent = markdown || MARKDOWN_OUTPUT_PLACEHOLDER;

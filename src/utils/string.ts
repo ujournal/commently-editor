@@ -142,6 +142,37 @@ export function rewriteMarkdownImageSrcsWithDims(
 }
 
 /**
+ * Rewrites inline image markdown: pending uploads are omitted (empty); others get w/h query params.
+ */
+export function rewriteMarkdownImagesForOutput(
+  markdown: string,
+  imageDims: Array<{ width: number | null; height: number | null }>,
+  imageIsPendingUpload: boolean[],
+): string {
+  let idx = 0;
+  return markdown.replace(
+    /!\[([^\]]*)\]\(([^)]+)\)/g,
+    (full, alt: string, inside: string) => {
+      const pending = Boolean(imageIsPendingUpload[idx]);
+      const dims = imageDims[idx];
+      idx += 1;
+      if (pending) return "";
+
+      if (!dims) return full;
+      const m = inside.trim().match(/^(\S+)(.*)$/s);
+      const src = m?.[1] ?? inside.trim();
+      const rest = m?.[2] ?? "";
+      const rewrittenSrc = rewriteImageSrcUrlWithDims(
+        src,
+        dims.width,
+        dims.height,
+      );
+      return `![${alt}](${rewrittenSrc}${rest})`;
+    },
+  );
+}
+
+/**
  * True if the line is empty, only whitespace, or only &nbsp; (entity or character).
  */
 function isBlankLine(line: string): boolean {
