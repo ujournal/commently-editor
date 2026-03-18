@@ -83,8 +83,10 @@ function getMeasuredImageDims(
       const hParam = url.searchParams.get("h");
       const parsedW = wParam ? Number(wParam) : NaN;
       const parsedH = hParam ? Number(hParam) : NaN;
-      if (Number.isFinite(parsedW) && parsedW > 0) w = Math.round(parsedW);
-      if (Number.isFinite(parsedH) && parsedH > 0) h = Math.round(parsedH);
+      if (typeof parsedW === "number" && isFinite(parsedW) && parsedW > 0)
+        w = Math.round(parsedW);
+      if (typeof parsedH === "number" && isFinite(parsedH) && parsedH > 0)
+        h = Math.round(parsedH);
     } catch {
       // ignore invalid URL
     }
@@ -513,8 +515,76 @@ export function attachMarkdownOutput(
     });
   };
 
-  const onImageLoadOrError = () => scheduleUpdate();
-  const knownImgs = new Set<HTMLImageElement>();
+  const shouldRemoveBrokenImage = (img: HTMLImageElement) => {
+    // Remove images that can't be loaded (either via `error` event or
+    // `complete` but missing dimensions). This prevents broken images from
+    // persisting in the editor/markdown output.
+    return true;
+  };
+
+  const knownImgs: HTMLImageElement[] = [];
+
+  const removeBrokenImageFromDoc = (img: HTMLImageElement) => {
+    // Find the matching `image` node by DOM identity.
+    let found:
+      | {
+          pos: number;
+          nodeSize: number;
+        }
+      | null = null;
+
+    editor.state.doc.descendants((node, pos) => {
+      if (found) return;
+      if (node.type.name !== "image") return;
+      const dom = editor.view.nodeDOM(pos) as HTMLElement | null;
+      if (!dom) return;
+      if (dom === img) {
+        found = { pos, nodeSize: node.nodeSize };
+        return;
+      }
+      const innerImg = dom.querySelector("img");
+      if (innerImg === img) {
+        found = { pos, nodeSize: node.nodeSize };
+      }
+    });
+
+    if (!found) return false;
+
+    // Remove event listeners + remove from our "known" set, to avoid leaks.
+    const knownIdx = knownImgs.indexOf(img);
+    if (knownIdx !== -1) knownImgs.splice(knownIdx, 1);
+    img.removeEventListener("load", onImageLoadOrError);
+    img.removeEventListener("error", onImageLoadOrError);
+
+    const tr = editor.state.tr.delete(found.pos, found.pos + found.nodeSize);
+    editor.view.dispatch(tr);
+    scheduleUpdate();
+    return true;
+  };
+
+  const onImageLoadOrError = (event?: Event) => {
+    const target = event?.target;
+    if (!(target instanceof HTMLImageElement)) {
+      scheduleUpdate();
+      return;
+    }
+
+    // Remove broken pasted images.
+    // - `error` event: image failed to load.
+    // - `load` event but 0 natural dims: indicates an invalid/broken data URL.
+    if (shouldRemoveBrokenImage(target)) {
+      const naturalW = target.naturalWidth || 0;
+      const naturalH = target.naturalHeight || 0;
+      const isErrorEvent = event?.type === "error";
+      const isLoadedButEmpty = event?.type === "load" && naturalW <= 0 && naturalH <= 0;
+      if (isErrorEvent || isLoadedButEmpty) {
+        removeBrokenImageFromDoc(target);
+        return;
+      }
+    }
+
+    scheduleUpdate();
+  };
 
   const updateMarkdownOutput = () => {
     if (element) {
@@ -541,12 +611,23 @@ export function attachMarkdownOutput(
 
     // Ensure we re-render once images finish loading (dimensions may be 0
     // until `naturalWidth/Height` are available).
-    const imgs = Array.from(editorRoot.querySelectorAll("img"));
-    for (const img of imgs) {
-      if (knownImgs.has(img)) continue;
-      knownImgs.add(img);
+    const imgNodes = editorRoot.querySelectorAll("img");
+    for (let i = 0; i < imgNodes.length; i++) {
+      const img = imgNodes[i] as HTMLImageElement;
+      if (knownImgs.indexOf(img) !== -1) continue;
+      knownImgs.push(img);
       img.addEventListener("load", onImageLoadOrError);
       img.addEventListener("error", onImageLoadOrError);
+
+      // If the image already completed but has no dimensions, treat it as broken.
+      if (shouldRemoveBrokenImage(img) && img.complete) {
+        const naturalW = img.naturalWidth || 0;
+        const naturalH = img.naturalHeight || 0;
+        if (naturalW <= 0 || naturalH <= 0) {
+          removeBrokenImageFromDoc(img);
+          continue;
+        }
+      }
 
       // If the image is already loaded, `load` won't fire again.
       // Schedule an update so we can use its natural dimensions.
@@ -562,6 +643,34 @@ export function attachMarkdownOutput(
     }
   };
 
+  // Catch fast image failures: attach listeners as soon as new <img> nodes appear.
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (let i = 0; i < mutation.addedNodes.length; i++) {
+        const node = mutation.addedNodes[i];
+        if (!(node instanceof HTMLElement)) continue;
+        const imgs = node.tagName === "IMG" ? [node] : node.querySelectorAll("img");
+        for (let j = 0; j < imgs.length; j++) {
+          const img = imgs[j] as HTMLImageElement;
+          if (knownImgs.indexOf(img) !== -1) continue;
+          knownImgs.push(img);
+          img.addEventListener("load", onImageLoadOrError);
+          img.addEventListener("error", onImageLoadOrError);
+
+          if (shouldRemoveBrokenImage(img) && img.complete) {
+            const naturalW = img.naturalWidth || 0;
+            const naturalH = img.naturalHeight || 0;
+            if (naturalW <= 0 || naturalH <= 0) {
+              removeBrokenImageFromDoc(img);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  observer.observe(editorRoot, { childList: true, subtree: true });
+
   editor.on("update", scheduleUpdate);
   editor.on("selectionUpdate", scheduleUpdate);
   updateMarkdownOutput();
@@ -573,11 +682,13 @@ export function attachMarkdownOutput(
       element.textContent = "";
       element.classList.remove("is-empty");
     }
-    for (const img of knownImgs) {
+    observer.disconnect();
+    for (let i = 0; i < knownImgs.length; i++) {
+      const img = knownImgs[i] as HTMLImageElement;
       img.removeEventListener("load", onImageLoadOrError);
       img.removeEventListener("error", onImageLoadOrError);
     }
-    knownImgs.clear();
+    knownImgs.length = 0;
     if (rafId != null) {
       window.cancelAnimationFrame(rafId);
       rafId = null;
